@@ -12,4 +12,4 @@ Put `glut.h` in `C:\Program Files\Microsoft Visual Studio\VS_VERSION\Include\GL`
 
 Put `glut32.lib` in `C:\Program Files (x86)\Microsoft Visual Studio\VS_VERSION\Community\VC\Auxiliary\VS\lib\x86`
 
-Put `glut64.lib` in `C:\Program Files (x86)\Microsoft Visual Studio\VS_VERSION\Community\VC\Auxiliary\VS\lib\x64`
+Put `glut.lib` in `C:\Program Files (x86)\Microsoft Visual Studio\VS_VERSION\Community\VC\Auxiliary\VS\lib\x64`
