@@ -264,6 +264,13 @@ int main()
 	io.ConfigViewportsNoAutoMerge = true;
 	//io.ConfigViewportsNoTaskBarIcon = true;
 
+	ImGuiWindowFlags flags = 0;
+	flags |= ImGuiWindowFlags_NoTitleBar;
+	flags |= ImGuiWindowFlags_NoMove;
+	flags |= ImGuiWindowFlags_NoCollapse;
+	flags |= ImGuiWindowFlags_NoDocking;
+	flags |= ImGuiWindowFlags_NoResize;
+
 	// Setup Dear ImGui style
 	ImGui::StyleColorsDark();
 
@@ -339,13 +346,6 @@ int main()
 		//		show_another_window = false;
 		//	ImGui::End();
 		//}
-
-		ImGuiWindowFlags flags = 0;
-		flags |= ImGuiWindowFlags_NoTitleBar;
-		flags |= ImGuiWindowFlags_NoMove;
-		flags |= ImGuiWindowFlags_NoCollapse;
-		flags |= ImGuiWindowFlags_NoDocking;
-		flags |= ImGuiWindowFlags_NoResize;
 
 		if (informer_open)
 		{

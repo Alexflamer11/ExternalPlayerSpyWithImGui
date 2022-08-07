@@ -518,7 +518,7 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 
 								size_t years = player->AccountAge / 365;
 								size_t months = (player->AccountAge & 364) / 30;
-								size_t days = (player->AccountAge & 364) / 30;
+								size_t days = (player->AccountAge & 364) % 30;
 
 								// Prettify the account age results, only show results if not 0.
 								//   (days will always show, even if 0 days ago)
