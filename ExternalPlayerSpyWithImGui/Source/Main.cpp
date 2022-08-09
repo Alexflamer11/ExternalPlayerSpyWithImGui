@@ -499,7 +499,9 @@ static void glfw_error_callback(int error, const char* description)
 
 int main()
 {
-	SetConsoleTitleA("Chinese Government Player Observation Tool MKII - Gui Edition");
+	const char* overhead_title = "Chinese Government Player Observation Tool v1.0.0";
+
+	SetConsoleTitleA(overhead_title);
 	Utils::ShowConsole(); // If console is hidden
 
 	// Init our own custom player data
@@ -647,7 +649,7 @@ int main()
 			// Chinese Government RBG Gaming Chair with built in Speaskers Player Observation Tool
 			ImGui::SetNextWindowSize(ImVec2(707, 556));
 			ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(11, 15, 26, 255));
-			ImGui::Begin("Chinese Government Player Observation Tool MKII - Gui Edition", &informer_open, flags);
+			ImGui::Begin(overhead_title, &informer_open, flags);
 			ImGui::PopStyleColor();
 
 			ImGui::PushFont(arial_18);
