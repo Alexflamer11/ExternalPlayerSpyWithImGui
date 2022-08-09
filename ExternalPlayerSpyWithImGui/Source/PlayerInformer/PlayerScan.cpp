@@ -293,6 +293,7 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 		Offset::Player::UserId = 0;
 		Offset::Player::AccountAge = 0;
 		Offset::Player::FollowUserId = 0;
+		Offset::Player::TeleportedIn = 0;
 	}
 
 	uintptr_t singleton;
@@ -442,6 +443,8 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 											Offset::Player::AccountAge = MemoryReader::Read<uintptr_t>(process, getter + 2);
 										else if (prop_name == "FollowUserId")
 											Offset::Player::FollowUserId = MemoryReader::Read<uintptr_t>(process, getter + 2);
+										else if (prop_name == "TeleportedIn")
+											Offset::Player::TeleportedIn = MemoryReader::Read<uintptr_t>(process, getter + 2);
 
 										got_player_properties = true;
 									}
@@ -455,7 +458,8 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 						//   or a major update causing offsets to shift.
 						// LocalPlayer is always the first (and thus a safe) entry.
 						if (!Offset::Player::DisplayName || !Offset::Player::UserId
-							|| !Offset::Player::AccountAge || !Offset::Player::FollowUserId)
+							|| !Offset::Player::AccountAge || !Offset::Player::FollowUserId
+							|| !Offset::Player::TeleportedIn)
 						{
 							puts("[!] Failed to get Player offsets.");
 							return;
@@ -528,8 +532,8 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 								player->AccountAgeStr = std::to_string(player->AccountAge) + (player->AccountAge == 1 ? " day" : " days");
 
 								size_t years = player->AccountAge / 365;
-								size_t months = (player->AccountAge & 364) / 30;
-								size_t days = (player->AccountAge & 364) % 30;
+								size_t months = (player->AccountAge % 364) / 30;
+								size_t days = (player->AccountAge % 364) % 30;
 
 								// Prettify the account age results, only show results if not 0.
 								//   (days will always show, even if 0 days ago)
@@ -555,7 +559,12 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 
 								player->AccountCreatedStr += std::to_string(days) + (days == 1 ? " day ago" : " days ago");
 
+								// TeleportedIn
+								player->TeleportedIn = MemoryReader::Read<bool>(process, plr + Offset::Player::TeleportedIn);
+								player->TeleportedInStr = player->TeleportedIn ? "true" : "false";
+
 								// FollowUserId
+								player->CachedFollowUser = 0; // Set in draw
 								player->FollowUserId = MemoryReader::Read<uint64_t>(process, plr + Offset::Player::FollowUserId);
 								player->FollowUserIdStr = std::to_string(player->FollowUserId);
 								player->FollowUserIdProfile = "https://www.roblox.com/users/";
@@ -593,6 +602,26 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 						catch (std::exception& e)
 						{
 							printf("[!] Error trying to read a player: %s\n", e.what());
+						}
+					}
+				}
+
+				// Find the followed user if they are in the server or rejoined
+				//    the server and then cache their info for future lookups
+				// This will keep players from being deleted, and then subsiquently
+				//    duplicated if they do rejoin, but that is not a concern at all
+				//    as popout player already handles duplicate user id's
+				for (auto plr : player_reader.data)
+				{
+					if (!plr->CachedFollowUser.get())
+					{
+						for (auto& other_plr : player_reader.data)
+						{
+							if (other_plr->UserId == plr->FollowUserId)
+							{
+								plr->CachedFollowUser = other_plr;
+								break;
+							}
 						}
 					}
 				}

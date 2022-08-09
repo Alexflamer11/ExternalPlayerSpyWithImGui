@@ -25,6 +25,10 @@ namespace PlayerInformer
 		std::string AccountAgeStr;
 		std::string AccountCreatedStr;
 
+		bool TeleportedIn;
+		std::string TeleportedInStr;
+
+		std::shared_ptr<PlayerInformation> CachedFollowUser;
 		uint64_t FollowUserId;
 		std::string FollowUserIdStr;
 		std::string FollowUserIdProfile;

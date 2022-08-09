@@ -34,5 +34,6 @@ namespace Offset
 		extern size_t UserId;
 		extern size_t AccountAge;
 		extern size_t FollowUserId;
+		extern size_t TeleportedIn;
 	}
 }

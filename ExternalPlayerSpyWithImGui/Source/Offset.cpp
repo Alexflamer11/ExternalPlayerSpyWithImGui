@@ -14,5 +14,6 @@ namespace Offset
 		size_t UserId = 0;
 		size_t AccountAge = 0;
 		size_t FollowUserId = 0;
+		size_t TeleportedIn = 0;
 	}
 }

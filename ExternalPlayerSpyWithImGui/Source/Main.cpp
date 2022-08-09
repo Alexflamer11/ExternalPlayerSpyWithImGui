@@ -143,7 +143,12 @@ void DrawPlayer(std::shared_ptr<PlayerInformer::PlayerInformation> plr)
 		ImGui::PopStyleColor();
 		if (ImGui::Button(plr->AccountCreatedStr.c_str()))
 			Utils::SetClipboard(plr->AccountCreatedStr);
-	
+
+		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 188, 255));
+		ImGui::Text("Teleported In:"); ImGui::SameLine();
+		ImGui::PopStyleColor();
+		ImGui::Text(plr->TeleportedInStr.c_str());
+
 		if (plr->FollowUserId)
 		{
 			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(196, 147, 255, 255));
@@ -153,32 +158,22 @@ void DrawPlayer(std::shared_ptr<PlayerInformer::PlayerInformation> plr)
 			ImGui::PopStyleColor();
 			if (ImGui::Button(plr->FollowUserIdStr.c_str()))
 				Utils::SetClipboard(plr->FollowUserIdStr);
+
 	
-			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 188, 255));
-			ImGui::Text("Follow User Id Profile: ");
-			ImGui::PopStyleColor();
 			if (ImGui::Button(plr->FollowUserIdProfile.c_str()))
 				Utils::SetClipboard(plr->FollowUserIdProfile);
 
 			// Find follower
-			bool had_player = false;
-
 			auto player_reader = PlayerInformer::PlayerDataReader(true);
-			for (auto& other_plr : player_reader.data)
-			{
-				if (other_plr->UserId == plr->FollowUserId)
-				{
-					had_player = true;
-					if (ImGui::Button("Popout Followed User"))
-					{
-						PopoutPlayer(other_plr);
-						break;
-					}
-				}
-			}
+			std::shared_ptr<PlayerInformer::PlayerInformation> cached_follow_user = plr->CachedFollowUser;
 
-			if (!had_player)
+			if (!cached_follow_user.get())
 				ImGui::Text("Followed user has left the game.");
+			else
+			{
+				if (ImGui::Button("Popout Followed User"))
+					PopoutPlayer(cached_follow_user);
+			}
 		}
 	}
 		
@@ -312,13 +307,18 @@ int main()
 	bool follower_search_display_name = true;
 	bool follower_search_user_id = true;
 
+	bool teleporter_search_name = true;
+	bool teleporter_search_display_name = true;
+	bool teleporter_search_user_id = true;
+
 	// Save our list of tabs
 	int current_tab_id = 0;
-	std::vector<const char*> buttons = { "Search", "Followers", "Extra", "Credits" };
+	std::vector<const char*> buttons = { "Search", "Followers", "Teleporters", "Extra", "Credits" };
 
 	// Save unique buffers for each search
 	char search_players_buffer[64] = {};
 	char search_followers_buffer[64] = {};
+	char search_teleporters_buffer[64] = {};
 
 	// Main loop
 	while (!glfwWindowShouldClose(window))
@@ -354,7 +354,7 @@ int main()
 			ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(11, 15, 26, 255));
 			ImGui::Begin("Chinese Government Player Observation Tool MKII - Gui Edition", &informer_open, flags);
 			ImGui::PopStyleColor();
-			
+
 			ImGui::PushFont(arial_18);
 			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 
@@ -395,13 +395,13 @@ int main()
 				if (i != buttons.size())
 					ImGui::SameLine(0, 0);
 			}
-			
+
 			ImGui::PopStyleVar();
 			ImGui::PopFont();
 
 			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 
-			if (current_tab_id != 3)
+			if (current_tab_id != 4)
 			{
 				ImGui::SameLine();
 				ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 83); // Padding of 8 is default
@@ -538,7 +538,66 @@ int main()
 
 				break;
 			}
-			case 2: // Extra
+			case 2: // Teleporters
+			{
+				ImGui::BeginChildFrame(current_tab_id + 11, ImVec2(0, 30));
+
+				ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(5, 7, 15, 255));
+				ImGui::PushItemWidth(300);
+				ImGui::InputTextWithHint("##Teleporters Search Input", "Search teleporters...", search_teleporters_buffer, 64); ImGui::SameLine();
+				ImGui::PopItemWidth();
+				ImGui::Checkbox("Name", &teleporter_search_name); ImGui::SameLine();
+				ImGui::Checkbox("Display Name", &teleporter_search_display_name); ImGui::SameLine();
+				ImGui::Checkbox("User Id", &teleporter_search_user_id);
+				ImGui::PopStyleColor();
+
+				// Style var before adding padding to the new line
+				ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+				ImGui::EndChildFrame();
+				ImGui::PopStyleVar();
+
+				ImGui::BeginChildFrame(current_tab_id + 12, ImVec2(0, -23)); // Fill to bottom
+
+				size_t buffer_len = strlen(search_teleporters_buffer);
+				uint64_t possible_id_search = 0;
+				bool id_successful = false;
+				if (buffer_len)
+				{
+					for (size_t i = 0; i < buffer_len; i++)
+					{
+						if (search_teleporters_buffer[i] >= '0' && search_teleporters_buffer[i] <= '9')
+							id_successful = true;
+					}
+				}
+
+				child_count = 50; // refresh child frame count
+				auto players = PlayerInformer::PlayerDataReader();
+				for (auto plr : players.data)
+				{
+					if (plr->TeleportedIn)
+					{
+						if (!buffer_len
+							|| (teleporter_search_name && CompareStringStart(plr->LowerName, search_teleporters_buffer, buffer_len))
+							|| (teleporter_search_display_name && CompareStringStart(plr->LowerDisplayName, search_teleporters_buffer, buffer_len))
+							|| (teleporter_search_user_id && CompareStringStart(plr->UserIdStr, search_teleporters_buffer, buffer_len)))
+						{
+							//printf("player stuff: %s\n", plr->Title.c_str());
+							if (ImGui::CollapsingHeader(plr->Title.c_str()))
+							{
+								DrawPlayer(plr);
+
+								if (ImGui::Button(plr->UniquePopoutName.c_str(), ImVec2(-1, 0)))
+									PopoutPlayer(plr);
+							}
+						}
+					}
+				}
+
+				ImGui::EndChildFrame();
+
+				break;
+			}
+			case 3: // Extra
 			{
 				ImGui::BeginChildFrame(current_tab_id + 11, ImVec2(0, -23));
 
@@ -611,7 +670,7 @@ int main()
 
 				break;
 			}
-			case 3: // Credits
+			case 4: // Credits
 			{
 				ImGui::BeginChildFrame(current_tab_id + 11, ImVec2(0, -23));
 
