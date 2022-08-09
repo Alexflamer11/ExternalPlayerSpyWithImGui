@@ -6,9 +6,10 @@
 
 enum class JOIN_STATUS
 {
-	NONE,
-	JOINED,
-	LEFT,
+	NONE, // In server
+	JOINED, // Just joined server
+	LEFT, // Just left server
+	GONE, // Gone but still cached due to follow data
 };
 
 namespace PlayerInformer

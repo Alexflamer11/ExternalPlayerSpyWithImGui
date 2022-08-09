@@ -648,7 +648,10 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 						// Keep players for at least one more sweep to know
 						//    who left the game since the last recache.
 						if (plr->JoinStatus == JOIN_STATUS::LEFT)
+						{
+							plr->JoinStatus = JOIN_STATUS::GONE; // A player may have them still cached
 							player_cache_to_remove.push_back(to_remove_index);
+						}
 						else
 							plr->JoinStatus = JOIN_STATUS::LEFT;
 					}

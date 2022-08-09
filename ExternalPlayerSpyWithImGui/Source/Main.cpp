@@ -7,9 +7,11 @@
 
 #include "Utils/Utils.hpp"
 #include "PlayerInformer/PlayerInformer.hpp"
+#include "nlohmann/json.hpp"
 
-#include <vector>
 #include <thread>
+#include <stack>
+#include <fstream>
 
 #include <gl/glut.h>
 
@@ -61,6 +63,266 @@ bool LoadTextureFromMemory(std::string file, GLuint* out_texture, int* out_width
 	return true;
 }
 
+std::string TimeNow()
+{
+	// Save time created to the file
+	time_t now = time(0);
+
+	char date_and_time[128];
+	date_and_time[127] = '\0';
+	if (ctime_s(date_and_time, sizeof(date_and_time), &now) == 0)
+	{
+		// Why does this even need to exist in the first place?
+		size_t len = strlen(date_and_time);
+		if (len > 0 && date_and_time[len - 1] == '\n')
+			date_and_time[len - 1] = '\0';
+
+		return date_and_time;
+	}
+
+	return "UNKNOWN";
+}
+
+nlohmann::json DumpPlayer(std::shared_ptr<PlayerInformer::PlayerInformation> plr)
+{
+	nlohmann::json player;
+
+	player["Name"] = plr->Name;
+	player["DisplayName"] = plr->DisplayName;
+	player["UserId"] = plr->UserId;
+	player["AccountAge"] = plr->AccountAge;
+	player["TeleportedIn"] = plr->TeleportedIn;
+	player["FollowUserId"] = plr->FollowUserId;
+	player["Profile_Link"] = plr->ProfileLink;
+	
+	switch (plr->JoinStatus)
+	{
+	case JOIN_STATUS::NONE:
+		player["Status"] = "Active";
+		break;
+	case JOIN_STATUS::JOINED:
+		player["Status"] = "Joined";
+		break;
+	case JOIN_STATUS::LEFT:
+		player["Status"] = "Left";
+		break;
+	case JOIN_STATUS::GONE:
+		player["Status"] = "Gone";
+		break;
+	default:
+		player["Status"] = "UNKNOWN";
+		break;
+	}
+
+	return player;
+}
+
+nlohmann::json DumpServerInformation(std::vector<std::shared_ptr<PlayerInformer::PlayerInformation>>& player_list, PlayerInformer::EngineData& engine_data)
+{
+	nlohmann::json result = {};
+
+	result["Log_Created"] = TimeNow();
+
+	// List of cached players that left the game and still have references
+	std::vector<std::shared_ptr<PlayerInformer::PlayerInformation>> cached_players = {};
+
+	// Server data
+	{
+		nlohmann::json server_info = {};
+
+		// Server Information
+		{
+			server_info["PlaceId"] = engine_data.PlaceId;
+			server_info["JobId"] = engine_data.JobId;
+
+			// Save a list of all join links we would like to have (just Lua and Browser/Javascript really, idk what else)
+			nlohmann::json join_links = {};
+
+			// Browser
+			{
+				std::string browser_link = "Roblox.GameLauncher.joinGameInstance(";
+				browser_link += engine_data.PlaceIdStr;
+				browser_link += ", \"";
+				browser_link += engine_data.JobId;
+				browser_link += "\")";
+
+				join_links["Browser"] = browser_link;
+			}
+
+			// Lua
+			{
+				std::string lua_link = "game:GetService(\"TeleportService\"):TeleportToPlaceInstance(";
+				lua_link += engine_data.PlaceIdStr;
+				lua_link += ", \"";
+				lua_link += engine_data.JobId;
+				lua_link += "\")";
+
+				join_links["Lua"] = lua_link;
+			}
+
+			server_info["Join_Links"] = join_links;
+		}
+
+		result["Server_Information"] = server_info;
+	}
+
+	auto GetPlayerCacheList = [&player_list, &cached_players](std::shared_ptr<PlayerInformer::PlayerInformation> plr) -> std::string
+	{
+		std::string list = "";
+
+		for (auto other_plr : player_list)
+		{
+			if (other_plr->UserId == plr->UserId)
+				return "Players";
+		}
+
+		for (auto other_plr : cached_players)
+		{
+			if (other_plr->UserId == plr->UserId)
+				return "Cached_Players";
+		}
+
+		return list;
+	};
+
+	// Before writing any players, cache all the followers as
+	//   this needs to be recrusive to make the rest of the
+	//   player writing easier
+	std::stack<std::shared_ptr<PlayerInformer::PlayerInformation>> players_to_cache = {};
+	for (auto plr : player_list)
+	{
+		if (plr->FollowUserId && plr->CachedFollowUser.get())
+		{
+			if (GetPlayerCacheList(plr->CachedFollowUser).empty())
+			{
+				// If the player is not cached, add them to the cache
+				cached_players.push_back(plr->CachedFollowUser);
+				players_to_cache.push(plr->CachedFollowUser);
+			}
+		}
+	}
+
+	// Iterate all cached players and cache any 2nd, 3rd+ followers too
+	while (players_to_cache.size())
+	{
+		std::shared_ptr<PlayerInformer::PlayerInformation> plr = players_to_cache.top();
+		players_to_cache.pop();
+
+		if (plr->FollowUserId && plr->CachedFollowUser.get())
+		{
+			if (GetPlayerCacheList(plr->CachedFollowUser).empty())
+			{
+				cached_players.push_back(plr->CachedFollowUser);
+				players_to_cache.push(plr->CachedFollowUser);
+			}
+		}
+	}
+
+	auto WritePlayer = [&GetPlayerCacheList](std::shared_ptr<PlayerInformer::PlayerInformation> plr) -> nlohmann::json
+	{
+		nlohmann::json player = DumpPlayer(plr);
+
+		if (plr->FollowUserId)
+		{
+			if (plr->CachedFollowUser.get())
+			{
+				std::string list = GetPlayerCacheList(plr->CachedFollowUser);
+				if (!list.empty())
+					player["Followed_Player_List"] = list;
+				else
+					player["Followed_Player_List"] = nullptr; // null
+			}
+			else
+				player["Followed_Player_List"] = nullptr; // null
+		}
+
+		return player;
+	};
+
+	// Active player data
+	{
+		nlohmann::json players = nlohmann::json::value_t::array; // prevent null list
+
+		for (auto plr : player_list)
+			players.push_back(WritePlayer(plr));
+
+		result["Players"] = players;
+	}
+
+	// Cached version of people that were followed but are no longer in the game
+	{
+		nlohmann::json cached_players_json = nlohmann::json::value_t::array; // prevent null list
+
+		for (auto plr : cached_players)
+			cached_players_json.push_back(WritePlayer(plr));
+
+		result["Cached_Players"] = cached_players_json;
+	}
+	
+	//printf("JSON RESULT: %s\n", result.dump(1, '\t').c_str());
+
+	return result;
+}
+
+bool DialogDebounce = false;
+void WriteJSONToFileDialog(std::string title, std::string contents)
+{
+	wchar_t file_name[MAX_PATH];
+
+	std::wstring title_w = Utils::FromUtf8(title);
+
+	OPENFILENAMEW ofn;
+	ZeroMemory(&file_name, sizeof(file_name));
+	ZeroMemory(&ofn, sizeof(ofn));
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = NULL;  // If you have a window to center over, put its HANDLE here
+	ofn.lpstrFilter = L"JSON File\0.JSON\0Text File\0.TXT\0All Files\0*.*\0\0";
+	ofn.lpstrFile = file_name;
+	ofn.nMaxFile = MAX_PATH - 6; // for our append
+	ofn.lpstrTitle = title_w.c_str();
+	ofn.Flags = OFN_DONTADDTORECENT;
+
+	if (GetSaveFileNameW(&ofn))
+	{
+		file_name[MAX_PATH - 1] = '\0';
+
+		std::wstring file_name_str = file_name; // always null terminated
+
+		auto CheckOrAppendExtension = [&ofn](std::wstring path, std::wstring name) -> std::wstring
+		{
+			if (path.size() > name.size())
+			{
+				if (!wcscmp(path.c_str() + path.size() - name.size(), name.c_str()))
+					return path;
+			}
+
+			return path + name;
+		};
+
+		// Our custom filters
+		switch (ofn.nFilterIndex)
+		{
+		case 1:
+			file_name_str = CheckOrAppendExtension(file_name_str, L".json");
+			break;
+		case 2:
+			file_name_str = CheckOrAppendExtension(file_name_str, L".txt");
+			break;
+		default:
+			break;
+		}
+
+		std::fstream file;
+		file.open(file_name_str, std::fstream::out | std::fstream::binary);
+		file.write(contents.c_str(), contents.size());
+		file.close();
+	}
+	else
+		puts("[!] Failed to information to file.");
+
+	DialogDebounce = false;
+}
+
 // Save a list of players that have been popped out
 std::vector<std::shared_ptr<PlayerInformer::PlayerInformation>> popout_players;
 
@@ -107,7 +369,7 @@ void DrawPlayer(std::shared_ptr<PlayerInformer::PlayerInformation> plr)
 	{
 		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(96, 234, 90, 255));
 		ImGui::SetCursorPosY(pos + 3);
-		ImGui::Text("Name: "); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+		ImGui::Text("Name:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
 		ImGui::PopStyleColor();
 		if (ImGui::Button(plr->Name.c_str()))
 			Utils::SetClipboard(plr->Name);
@@ -115,7 +377,7 @@ void DrawPlayer(std::shared_ptr<PlayerInformer::PlayerInformation> plr)
 		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 253, 131, 255));
 		pos = ImGui::GetCursorPosY();
 		ImGui::SetCursorPosY(pos + 3);
-		ImGui::Text("Display Name: "); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+		ImGui::Text("Display Name:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
 		ImGui::PopStyleColor();
 		if (ImGui::Button(plr->DisplayName.c_str()))
 			Utils::SetClipboard(plr->DisplayName);
@@ -123,7 +385,7 @@ void DrawPlayer(std::shared_ptr<PlayerInformer::PlayerInformation> plr)
 		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(48, 200, 255, 255));
 		pos = ImGui::GetCursorPosY();
 		ImGui::SetCursorPosY(pos + 3);
-		ImGui::Text("User Id: "); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+		ImGui::Text("User Id:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
 		ImGui::PopStyleColor();
 		if (ImGui::Button(plr->UserIdStr.c_str()))
 			Utils::SetClipboard(plr->UserIdStr);
@@ -131,7 +393,7 @@ void DrawPlayer(std::shared_ptr<PlayerInformer::PlayerInformation> plr)
 		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(225, 58, 114, 255));
 		pos = ImGui::GetCursorPosY();
 		ImGui::SetCursorPosY(pos + 3);
-		ImGui::Text("Account Age: "); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+		ImGui::Text("Account Age:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
 		ImGui::PopStyleColor();
 		if (ImGui::Button(plr->AccountAgeStr.c_str()))
 			Utils::SetClipboard(plr->AccountAgeStr);
@@ -139,7 +401,7 @@ void DrawPlayer(std::shared_ptr<PlayerInformer::PlayerInformation> plr)
 		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 191, 0, 255));
 		pos = ImGui::GetCursorPosY();
 		ImGui::SetCursorPosY(pos + 3);
-		ImGui::Text("Created: "); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+		ImGui::Text("Created:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
 		ImGui::PopStyleColor();
 		if (ImGui::Button(plr->AccountCreatedStr.c_str()))
 			Utils::SetClipboard(plr->AccountCreatedStr);
@@ -154,7 +416,7 @@ void DrawPlayer(std::shared_ptr<PlayerInformer::PlayerInformation> plr)
 			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(196, 147, 255, 255));
 			pos = ImGui::GetCursorPosY();
 			ImGui::SetCursorPosY(pos + 3);
-			ImGui::Text("Follow User Id: "); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+			ImGui::Text("Follow User Id:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
 			ImGui::PopStyleColor();
 			if (ImGui::Button(plr->FollowUserIdStr.c_str()))
 				Utils::SetClipboard(plr->FollowUserIdStr);
@@ -182,11 +444,44 @@ void DrawPlayer(std::shared_ptr<PlayerInformer::PlayerInformation> plr)
 	ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(253, 105, 186, 255));
 	pos = ImGui::GetCursorPosY();
 	ImGui::SetCursorPosY(pos + 3);
-	ImGui::Text("Profile Link: "); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+	ImGui::Text("Profile Link:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
 	ImGui::PopStyleColor();
 
 	if (ImGui::Button(plr->ProfileLink.c_str()))
 		Utils::SetClipboard(plr->ProfileLink);
+
+	ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 125, 55, 255));
+	pos = ImGui::GetCursorPosY();
+	ImGui::SetCursorPosY(pos + 3);
+	ImGui::Text("Dump Information:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+	ImGui::PopStyleColor();
+
+	if (ImGui::Button("Copy to Clipboard"))
+	{
+		nlohmann::json info = {};
+		info["Log_Created"] = TimeNow();
+		info["Player"] = DumpPlayer(plr);
+
+		std::string dumped = info.dump(1, '\t');
+
+		Utils::SetClipboard(dumped);
+	}
+
+	ImGui::SameLine(); ImGui::SetCursorPosY(pos); ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 4);
+
+	if (ImGui::Button("Dump to File"))
+	{
+		if (!DialogDebounce)
+		{
+			DialogDebounce = true;
+
+			nlohmann::json info = {};
+			info["Log_Created"] = TimeNow();
+			info["Player"] = DumpPlayer(plr);
+
+			std::thread(WriteJSONToFileDialog, "Save Player Information", info.dump(1, '\t')).detach();
+		}
+	}
 }
 
 bool CompareStringStart(std::string& to_compare, char* buffer, size_t buffer_len)
@@ -657,11 +952,12 @@ int main()
 				ImGui::PopStyleColor();
 
 				auto engine_reader = PlayerInformer::EngineReader();
+				auto player_reader = PlayerInformer::PlayerDataReader();
 				
 				float pos = ImGui::GetCursorPosY();
 				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(225, 58, 114, 255));
 				ImGui::SetCursorPosY(pos + 3);
-				ImGui::Text("Place Id: "); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+				ImGui::Text("Place Id:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
 				ImGui::PopStyleColor();
 				if (ImGui::Button(engine_reader.data.PlaceIdStr.c_str()))
 					Utils::SetClipboard(engine_reader.data.PlaceIdStr);
@@ -669,7 +965,7 @@ int main()
 				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(96, 234, 90, 255));
 				pos = ImGui::GetCursorPosY();
 				ImGui::SetCursorPosY(pos + 3);
-				ImGui::Text("Job Id: "); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+				ImGui::Text("Job Id:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
 				ImGui::PopStyleColor();
 				if (ImGui::Button(engine_reader.data.JobId.c_str()))
 					Utils::SetClipboard(engine_reader.data.JobId);
@@ -677,7 +973,7 @@ int main()
 				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 188, 255));
 				pos = ImGui::GetCursorPosY();
 				ImGui::SetCursorPosY(pos + 3);
-				ImGui::Text("Join Script: "); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+				ImGui::Text("Join Script:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
 				ImGui::PopStyleColor();
 				if (ImGui::Button("Browser"))
 				{
@@ -716,6 +1012,37 @@ int main()
 
 				if (ImGui::Button("Hide Console"))
 					Utils::HideConsole();
+
+				ImGui::NewLine();
+
+				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 191, 0, 255));
+				ImGui::Text("Extra:");
+				ImGui::PopStyleColor();
+
+				pos = ImGui::GetCursorPosY();
+				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(48, 200, 255, 255));
+				ImGui::SetCursorPosY(pos + 3);
+				ImGui::Text("Dump all Player Information:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+				ImGui::PopStyleColor();
+				if (ImGui::Button("Copy to Clipboard"))
+				{
+					nlohmann::json info = DumpServerInformation(player_reader.data, engine_reader.data);
+					std::string dumped = info.dump(1, '\t');
+					Utils::SetClipboard(dumped);
+				}
+
+				ImGui::SameLine(); ImGui::SetCursorPosY(pos); ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 4);
+
+				if (ImGui::Button("Dump to File"))
+				{
+					if (!DialogDebounce)
+					{
+						DialogDebounce = true;
+
+						nlohmann::json info = DumpServerInformation(player_reader.data, engine_reader.data);
+						std::thread(WriteJSONToFileDialog, "Save Player Information", info.dump(1, '\t')).detach();
+					}
+				}
 
 				ImGui::EndChildFrame();
 
