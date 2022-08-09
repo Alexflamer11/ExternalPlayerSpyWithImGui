@@ -224,8 +224,13 @@ bool ComparePlayerSort(std::shared_ptr<PlayerInformer::PlayerInformation>& i1, s
 	return i1->LowerName.compare(i2->LowerName) < 1;
 }
 
+bool SuccessSinceUpdate = false; // As force update will not always be present, so make sure joins work properly
+uintptr_t CachedDataModel = 0; // Cache DataModel so we can properly handle joins when the player teleports
 void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 {
+	if (force_update)
+		SuccessSinceUpdate = false;
+
 	// Rescan for task scheduler
 	if (!cached_task_scheduler || force_update)
 	{
@@ -284,7 +289,7 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 
 	// Set all cached entries to 0
 	// Would happen on game version changes (if offset change)
-	if (force_update)
+	if (!SuccessSinceUpdate)
 	{
 		Offset::DataModel::PlaceId = 0;
 		Offset::DataModel::JobId = 0;
@@ -329,6 +334,9 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 	}
 	else
 	{
+		if (CachedDataModel && CachedDataModel != data_model)
+			puts("[!] Teleported to a new server.");
+
 		// In case of a new instance, get all the DataModel offsets on the first sweep
 		if (!Offset::DataModel::PlaceId || !Offset::DataModel::JobId)
 		{
@@ -360,7 +368,7 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 		auto engine_info = PlayerInformer::EngineReader();
 
 		// Keep trying to get the server information until all of it is successful
-		if (engine_info.data.JobId == "UNKNOWN" || force_update)
+		if (engine_info.data.JobId == "UNKNOWN" || !SuccessSinceUpdate || CachedDataModel != data_model)
 		{
 			// If any of the reads fail, set them to unknown to
 			//   prevent ImGui from crashing.
@@ -398,13 +406,17 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 				player_reader.data.clear();
 
 				// Refresh player count
-				if (force_update)
+				if (!SuccessSinceUpdate || CachedDataModel != data_model)
 				{
 					engine_info.data.PlayerCount = 0;
 					engine_info.data.PlayersJoined = 0;
 					engine_info.data.PlayersLeft = 0;
 
 					engine_info.data.PlayerCountCache = "0 Players | 0 Joined | 0 Left";
+
+					// In the case of a teleport, clear all cached data
+					player_reader.data.clear();
+					player_reader.cache.clear();
 				}
 
 				// Keep track on how many players joined the game since the last lookup
@@ -503,7 +515,7 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 								player = std::make_shared<PlayerInformer::PlayerInformation>();
 
 								// If this is the first scan of a server, set the join status to none
-								player->JoinStatus = force_update ? JOIN_STATUS::NONE : JOIN_STATUS::JOINED;
+								player->JoinStatus = (!SuccessSinceUpdate || CachedDataModel != data_model) ? JOIN_STATUS::NONE : JOIN_STATUS::JOINED;
 
 								// Name
 								player->Name = MemoryReader::ReadStringPtr(process, plr + Offset::Name);
@@ -705,5 +717,9 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 
 		// Make a request to get cache player images
 		std::thread(CacheImages, player_images_to_cache).detach();
+
+		// Update our custom flags
+		SuccessSinceUpdate = true;
+		CachedDataModel = data_model;
 	}
 }
