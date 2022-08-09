@@ -45,6 +45,12 @@ namespace PlayerInformer
 		std::string PlaceIdStr;
 
 		std::string JobId;
+
+		size_t PlayerCount;
+		size_t PlayersJoined;
+		size_t PlayersLeft;
+
+		std::string PlayerCountCache;
 	};
 
 	// Thread safe class to get the player data

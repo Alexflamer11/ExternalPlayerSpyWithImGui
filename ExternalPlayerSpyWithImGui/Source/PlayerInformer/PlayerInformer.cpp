@@ -27,7 +27,10 @@ PlayerInformer::EngineData engine_data;
 DWORD cached_proccess_id = 0;
 HANDLE cached_process_handle = 0;
 
-PlayerInformer::PlayerDataReader::PlayerDataReader(bool is_unsafe) : unsafe(is_unsafe), data(player_data), cache(cached_players)
+PlayerInformer::PlayerDataReader::PlayerDataReader(bool is_unsafe)
+	: unsafe(is_unsafe)
+	, data(player_data)
+	, cache(cached_players)
 {
 	if (!is_unsafe)
 		player_data_lock.lock();
@@ -39,7 +42,9 @@ PlayerInformer::PlayerDataReader::~PlayerDataReader()
 		player_data_lock.unlock();
 }
 
-PlayerInformer::EngineReader::EngineReader(bool is_unsafe) : unsafe(is_unsafe), data(engine_data)
+PlayerInformer::EngineReader::EngineReader(bool is_unsafe)
+	: unsafe(is_unsafe)
+	, data(engine_data)
 {
 	if (!is_unsafe)
 		engine_data_lock.lock();
@@ -224,6 +229,11 @@ void PlayerInformer::StartWatcher()
 	engine_data.JobId = "UNKNOWN";
 	engine_data.PlaceId = 0;
 	engine_data.PlaceIdStr = "UNKNOWN";
+
+	engine_data.PlayerCount = 0;
+	engine_data.PlayersJoined = 0;
+	engine_data.PlayersLeft = 0;
+	engine_data.PlayerCountCache = "0 Players | 0 Joined | 0 Left"; // Cannot be "" or ImGui will crash
 
 	std::thread(Watcher).detach();
 }

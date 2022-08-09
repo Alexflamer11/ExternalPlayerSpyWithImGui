@@ -355,34 +355,32 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 			return;
 		}
 
+		// Get engine information
+		auto engine_info = PlayerInformer::EngineReader();
+
+		// Keep trying to get the server information until all of it is successful
+		if (engine_info.data.JobId == "UNKNOWN" || force_update)
 		{
-			// Get engine information
-			auto engine_info = PlayerInformer::EngineReader();
+			// If any of the reads fail, set them to unknown to
+			//   prevent ImGui from crashing.
+			engine_info.data.PlaceId = 0;
+			engine_info.data.PlaceIdStr = "UNKNOWN";
+			engine_info.data.JobId = "UNKNOWN";
 
-			// Keep trying to get the server information until all of it is successful
-			if (engine_info.data.JobId == "UNKNOWN" || force_update)
-			{
-				// If any of the reads fail, set them to unknown to
-				//   prevent ImGui from crashing.
-				engine_info.data.PlaceId = 0;
-				engine_info.data.PlaceIdStr = "UNKNOWN";
-				engine_info.data.JobId = "UNKNOWN";
+			size_t place_id_addr = MemoryReader::Read<size_t>(process, data_model - 12 + Offset::DataModel::PlaceId);
+			size_t place_id_encrypted = MemoryReader::Read<size_t>(process, place_id_addr);
+			size_t place_id = place_id_encrypted - place_id_addr;
 
-				size_t place_id_addr = MemoryReader::Read<size_t>(process, data_model - 12 + Offset::DataModel::PlaceId);
-				size_t place_id_encrypted = MemoryReader::Read<size_t>(process, place_id_addr);
-				size_t place_id = place_id_encrypted - place_id_addr;
+			std::string job_id = MemoryReader::ReadString(process, data_model - 12 + Offset::DataModel::JobId);
 
-				std::string job_id = MemoryReader::ReadString(process, data_model - 12 + Offset::DataModel::JobId);
+			engine_info.data.PlaceId = place_id;
+			engine_info.data.PlaceIdStr = std::to_string(place_id);
 
-				engine_info.data.PlaceId = place_id;
-				engine_info.data.PlaceIdStr = std::to_string(place_id);
+			// Only overwite unknown if a job id was obtained
+			if (!job_id.empty())
+				engine_info.data.JobId = job_id;
 
-				// Only overwite unknown if a job id was obtained
-				if (!job_id.empty())
-					engine_info.data.JobId = job_id;
-
-				//printf("game info: %s - %s\n", engine_info.data.PlaceIdStr.c_str(), job_id.c_str());
-			}
+			//printf("game info: %s - %s\n", engine_info.data.PlaceIdStr.c_str(), job_id.c_str());
 		}
 
 		bool got_player_properties = false; // Re cache player properties
@@ -397,6 +395,19 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 			{
 				auto player_reader = PlayerInformer::PlayerDataReader();
 				player_reader.data.clear();
+
+				// Refresh player count
+				if (force_update)
+				{
+					engine_info.data.PlayerCount = 0;
+					engine_info.data.PlayersJoined = 0;
+					engine_info.data.PlayersLeft = 0;
+
+					engine_info.data.PlayerCountCache = "0 Players | 0 Joined | 0 Left";
+				}
+
+				// Keep track on how many players joined the game since the last lookup
+				size_t new_player_count = 0;
 
 				// Start gc sweep
 				// Any players not referenced at the end will be removed
@@ -562,6 +573,8 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 								player->FetchingProfilePicture = false;
 
 								player_reader.cache.push_back(player); // Save for the gc cache
+
+								new_player_count++; // Save our player count
 							}
 
 							// If the image was not loaded (or failed to load), attempt to load the image
@@ -595,8 +608,34 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 					to_remove_index++;
 				}
 
+				// Finally delete the players that left
 				for (auto i = player_cache_to_remove.rbegin(); i != player_cache_to_remove.rend(); i++)
 					player_reader.cache.erase(player_reader.cache.begin() + *i);
+
+				// 5 players
+				// 1 leaves
+				// 2 join
+				// 6 = new count
+
+				// 5 - 6 = -1 + 2 = 1
+
+				// Only set these variables if players existed
+				if (engine_info.data.PlayerCount != 0)
+				{
+					engine_info.data.PlayersJoined = new_player_count;
+					engine_info.data.PlayersLeft = engine_info.data.PlayerCount - player_reader.data.size() + new_player_count;
+				}
+
+				// Set current player count
+				engine_info.data.PlayerCount = player_reader.data.size();
+
+				// Set the new cached string
+				engine_info.data.PlayerCountCache = std::to_string(engine_info.data.PlayerCount);
+				engine_info.data.PlayerCountCache += engine_info.data.PlayerCount == 1 ? " Player | " : " Players | ";
+				engine_info.data.PlayerCountCache += std::to_string(engine_info.data.PlayersJoined);
+				engine_info.data.PlayerCountCache += " Joined | ";
+				engine_info.data.PlayerCountCache += std::to_string(engine_info.data.PlayersLeft);
+				engine_info.data.PlayerCountCache += " Left";
 
 				// Sort player list
 				std::sort(player_reader.data.begin(), player_reader.data.end(), ComparePlayerSort);

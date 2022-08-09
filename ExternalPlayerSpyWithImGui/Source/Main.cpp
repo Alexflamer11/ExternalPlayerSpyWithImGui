@@ -350,7 +350,7 @@ int main()
 		if (informer_open)
 		{
 			// Chinese Government RBG Gaming Chair with built in Speaskers Player Observation Tool
-			ImGui::SetNextWindowSize(ImVec2(707, 555));
+			ImGui::SetNextWindowSize(ImVec2(707, 556));
 			ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(11, 15, 26, 255));
 			ImGui::Begin("Chinese Government Player Observation Tool MKII - Gui Edition", &informer_open, flags);
 			ImGui::PopStyleColor();
@@ -435,7 +435,7 @@ int main()
 				ImGui::EndChildFrame();
 				ImGui::PopStyleVar();
 
-				ImGui::BeginChildFrame(current_tab_id + 12, ImVec2(0, -1)); // Fill to bottom
+				ImGui::BeginChildFrame(current_tab_id + 12, ImVec2(0, -23)); // Fill to bottom
 
 				size_t buffer_len = strlen(search_players_buffer);
 				uint64_t possible_id_search = 0;
@@ -497,7 +497,7 @@ int main()
 				ImGui::EndChildFrame();
 				ImGui::PopStyleVar();
 
-				ImGui::BeginChildFrame(current_tab_id + 12, ImVec2(0, -1)); // Fill to bottom
+				ImGui::BeginChildFrame(current_tab_id + 12, ImVec2(0, -23)); // Fill to bottom
 
 				size_t buffer_len = strlen(search_followers_buffer);
 				uint64_t possible_id_search = 0;
@@ -540,7 +540,7 @@ int main()
 			}
 			case 2: // Extra
 			{
-				ImGui::BeginChildFrame(current_tab_id + 11, ImVec2(0, -1));
+				ImGui::BeginChildFrame(current_tab_id + 11, ImVec2(0, -23));
 
 				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 191, 0, 255));
 				ImGui::Text("Server Information:");
@@ -613,7 +613,7 @@ int main()
 			}
 			case 3: // Credits
 			{
-				ImGui::BeginChildFrame(current_tab_id + 11, ImVec2(0, -1));
+				ImGui::BeginChildFrame(current_tab_id + 11, ImVec2(0, -23));
 
 				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 191, 0, 255));
 				ImGui::Text("Creator:");
@@ -729,6 +729,10 @@ int main()
 			default:
 				break;
 			}
+
+			// Bottom of every frame
+			auto engine_reader = PlayerInformer::EngineReader();
+			ImGui::Text(engine_reader.data.PlayerCountCache.c_str());
 			
 			ImGui::PopStyleColor();
 
