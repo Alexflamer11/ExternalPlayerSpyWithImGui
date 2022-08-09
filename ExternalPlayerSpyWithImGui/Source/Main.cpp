@@ -459,7 +459,24 @@ int main()
 						|| (search_user_id && CompareStringStart(plr->UserIdStr, search_players_buffer, buffer_len)))
 					{
 						//printf("player stuff: %s\n", plr->Title.c_str());
-						if (ImGui::CollapsingHeader(plr->Title.c_str()))
+
+						if (plr->JoinStatus == JOIN_STATUS::JOINED)
+						{
+							ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(44, 120, 75, 255));
+							ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(103, 175, 116, 255));
+						}
+						else if (plr->JoinStatus == JOIN_STATUS::LEFT)
+						{
+							ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(170, 30, 30, 255));
+							ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(240, 70, 70, 255));
+						}
+						
+						bool open_header = ImGui::CollapsingHeader(plr->Title.c_str());
+
+						if (plr->JoinStatus == JOIN_STATUS::JOINED || plr->JoinStatus == JOIN_STATUS::LEFT)
+							ImGui::PopStyleColor(2);
+
+						if (open_header)
 						{
 							DrawPlayer(plr);
 
@@ -523,7 +540,24 @@ int main()
 							|| (follower_search_user_id && CompareStringStart(plr->FollowUserIdStr, search_followers_buffer, buffer_len)))
 						{
 							//printf("player stuff: %s\n", plr->Title.c_str());
-							if (ImGui::CollapsingHeader(plr->Title.c_str()))
+							
+							if (plr->JoinStatus == JOIN_STATUS::JOINED)
+							{
+								ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(44, 120, 75, 255));
+								ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(103, 175, 116, 255));
+							}
+							else if (plr->JoinStatus == JOIN_STATUS::LEFT)
+							{
+								ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(170, 30, 30, 255));
+								ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(240, 70, 70, 255));
+							}
+
+							bool open_header = ImGui::CollapsingHeader(plr->Title.c_str());
+
+							if (plr->JoinStatus == JOIN_STATUS::JOINED || plr->JoinStatus == JOIN_STATUS::LEFT)
+								ImGui::PopStyleColor(2);
+
+							if (open_header)
 							{
 								DrawPlayer(plr);
 
@@ -582,7 +616,24 @@ int main()
 							|| (teleporter_search_user_id && CompareStringStart(plr->UserIdStr, search_teleporters_buffer, buffer_len)))
 						{
 							//printf("player stuff: %s\n", plr->Title.c_str());
-							if (ImGui::CollapsingHeader(plr->Title.c_str()))
+							
+							if (plr->JoinStatus == JOIN_STATUS::JOINED)
+							{
+								ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(44, 120, 75, 255));
+								ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(103, 175, 116, 255));
+							}
+							else if (plr->JoinStatus == JOIN_STATUS::LEFT)
+							{
+								ImGui::PushStyleColor(ImGuiCol_Header, IM_COL32(170, 30, 30, 255));
+								ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(240, 70, 70, 255));
+							}
+
+							bool open_header = ImGui::CollapsingHeader(plr->Title.c_str());
+
+							if (plr->JoinStatus == JOIN_STATUS::JOINED || plr->JoinStatus == JOIN_STATUS::LEFT)
+								ImGui::PopStyleColor(2);
+
+							if (open_header)
 							{
 								DrawPlayer(plr);
 

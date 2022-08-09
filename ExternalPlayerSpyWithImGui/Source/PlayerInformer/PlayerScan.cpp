@@ -477,6 +477,14 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 								if (cached_plr->UserId == user_id)
 								{
 									player = cached_plr;
+
+									// If a player was in the process of leaving, and they
+									//   end up rejoining the server, mark them as green again,
+									//   otherwise mark as none and move on.
+									if (player->JoinStatus == JOIN_STATUS::LEFT)
+										player->JoinStatus = JOIN_STATUS::JOINED;
+									else
+										player->JoinStatus = JOIN_STATUS::NONE;
 									
 									break;
 								}
@@ -492,8 +500,12 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 								// Additionally, nothihng that is displayed by ImGui is empty
 								//   to prevent random crashes on failed information grabbing.
 
-								// Name
 								player = std::make_shared<PlayerInformer::PlayerInformation>();
+
+								// If this is the first scan of a server, set the join status to none
+								player->JoinStatus = force_update ? JOIN_STATUS::NONE : JOIN_STATUS::JOINED;
+
+								// Name
 								player->Name = MemoryReader::ReadStringPtr(process, plr + Offset::Name);
 								if (player->Name.empty())
 									player->Name = "UNKNOWN";
@@ -607,10 +619,10 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 				}
 
 				// Find the followed user if they are in the server or rejoined
-				//    the server and then cache their info for future lookups
+				//    the server and then cache their info for future lookups.
 				// This will keep players from being deleted, and then subsiquently
 				//    duplicated if they do rejoin, but that is not a concern at all
-				//    as popout player already handles duplicate user id's
+				//    as popout player already handles duplicate user id's.
 				for (auto plr : player_reader.data)
 				{
 					if (!plr->CachedFollowUser.get())
@@ -632,7 +644,14 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 				for (auto plr : player_reader.cache)
 				{
 					if (!plr->WasReferenced)
-						player_cache_to_remove.push_back(to_remove_index);
+					{
+						// Keep players for at least one more sweep to know
+						//    who left the game since the last recache.
+						if (plr->JoinStatus == JOIN_STATUS::LEFT)
+							player_cache_to_remove.push_back(to_remove_index);
+						else
+							plr->JoinStatus = JOIN_STATUS::LEFT;
+					}
 
 					to_remove_index++;
 				}
@@ -641,22 +660,30 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 				for (auto i = player_cache_to_remove.rbegin(); i != player_cache_to_remove.rend(); i++)
 					player_reader.cache.erase(player_reader.cache.begin() + *i);
 
-				// 5 players
-				// 1 leaves
-				// 2 join
-				// 6 = new count
+				// Reset all info
+				engine_info.data.PlayerCount = 0;
+				engine_info.data.PlayersJoined = 0;
+				engine_info.data.PlayersLeft = 0;
 
-				// 5 - 6 = -1 + 2 = 1
-
-				// Only set these variables if players existed
-				if (engine_info.data.PlayerCount != 0)
+				// Loop through and find the players that fit in each category
+				for (auto plr : player_reader.cache)
 				{
-					engine_info.data.PlayersJoined = new_player_count;
-					engine_info.data.PlayersLeft = engine_info.data.PlayerCount - player_reader.data.size() + new_player_count;
-				}
+					// Increase player count on existing players or joining players
+					if (plr->JoinStatus == JOIN_STATUS::NONE || plr->JoinStatus == JOIN_STATUS::JOINED)
+						engine_info.data.PlayerCount++;
 
-				// Set current player count
-				engine_info.data.PlayerCount = player_reader.data.size();
+					if (plr->JoinStatus == JOIN_STATUS::JOINED)
+						engine_info.data.PlayersJoined++;
+					else if (plr->JoinStatus == JOIN_STATUS::LEFT)
+					{
+						engine_info.data.PlayersLeft++;
+
+						// Make sure to re-add the player to the player list again
+						//   as they no longer exist in the server but we still want
+						//   to display them one last time.
+						player_reader.data.push_back(plr);
+					}
+				}
 
 				// Set the new cached string
 				engine_info.data.PlayerCountCache = std::to_string(engine_info.data.PlayerCount);

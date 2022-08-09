@@ -4,11 +4,20 @@
 #include <memory>
 #include <vector>
 
+enum class JOIN_STATUS
+{
+	NONE,
+	JOINED,
+	LEFT,
+};
+
 namespace PlayerInformer
 {
 	// Information relating to a player (and cache string counterparts)
 	struct PlayerInformation
 	{
+		JOIN_STATUS JoinStatus; // To know if the player just joined, left, or already was here
+
 		// Cache the string variants to prevent creating them every frame
 		std::string Title;
 		std::string UniquePopoutName;

@@ -111,7 +111,7 @@ void Watcher()
 			// Reset search parameters in case of a new process
 			if (new_process)
 			{
-				new_process = false;
+				failed = false;
 				need_long_sleep = false;
 			}
 
