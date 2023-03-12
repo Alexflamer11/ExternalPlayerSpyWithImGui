@@ -11,9 +11,9 @@ namespace Offset
 	const size_t ScriptContextFromJob = 304;
 
 	const size_t ClassName = 20;
-	const size_t Children = 40;
-	const size_t Name = 36;
-	const size_t Parent = 48;
+	const size_t Children = 44;
+	const size_t Name = 40;
+	const size_t Parent = 52;
 
 	const size_t PropertyList = 12;
 	const size_t PropertyStart = 536;
