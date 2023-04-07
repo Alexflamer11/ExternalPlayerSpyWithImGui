@@ -499,7 +499,7 @@ static void glfw_error_callback(int error, const char* description)
 
 int main()
 {
-	const char* overhead_title = "Chinese Government Player Observation Tool v1.0.0";
+	const char* overhead_title = "Chinese Government Player Observation Tool v1.0.1";
 
 	SetConsoleTitleA(overhead_title);
 	Utils::ShowConsole(); // If console is hidden
