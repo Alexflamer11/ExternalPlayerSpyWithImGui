@@ -2,6 +2,8 @@
 
 #include "Utils/Utils.hpp"
 
+#include <TlHelp32.h>
+
 void* MemoryReader::ScanRegion(HANDLE process, const char* aob, const char* mask, uint8_t* base, size_t size)
 {
 #define READ_LIMIT (1024 * 1024 * 2) // 2 MB
@@ -49,7 +51,6 @@ void* MemoryReader::ScanProcess(HANDLE process, const char* aob, const char* mas
 
 		if (mbi.State & MEM_COMMIT && mbi.Protect & PAGE_READABLE && !(mbi.Protect & PAGE_GUARD))
 		{
-
 			if (void* result = ScanRegion(process, aob, mask, i, size))
 			{
 				return result;
@@ -70,22 +71,13 @@ MODULEINFO MemoryReader::GetProcessInfo(HANDLE process)
 	{
 		last_process_handle = process;
 
-		// Enumerate through all current modules
-		HMODULE module_handles[1024];
-		DWORD cbNeeded;
-		if (EnumProcessModules(process, module_handles, sizeof(module_handles), &cbNeeded))
-		{
-			if (cbNeeded > 0)
-			{
-				wchar_t szModName[MAX_PATH];
-				MODULEINFO info;
-				if (GetModuleFileNameEx(process, module_handles[0], szModName, sizeof(szModName) / sizeof(char))
-					&& GetModuleInformation(process, module_handles[0], &info, sizeof(MODULEINFO)))
-				{
-					cached_info = info;
-				}
-			}
-		}
+		// Enum process modules does not immediately get the offset we want
+		HANDLE hsnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(process));
+		MODULEENTRY32W me32;
+		me32.dwSize = sizeof(MODULEENTRY32W);
+		Module32FirstW(hsnapshot, &me32);
+		cached_info = { me32.modBaseAddr, me32.modBaseSize, 0 }; // Too lazy to change
+		CloseHandle(hsnapshot);
 	}
 
 	return cached_info;

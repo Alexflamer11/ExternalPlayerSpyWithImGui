@@ -2,6 +2,8 @@
 
 namespace Offset
 {
+	std::string CachedFileVersion = "";
+
 	namespace DataModel
 	{
 		size_t PlaceId = 0;

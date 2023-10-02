@@ -14,6 +14,9 @@ enum class JOIN_STATUS
 
 namespace PlayerInformer
 {
+	extern bool WroteEngineOffsets; // Allow the user to forcefully cache new offsets
+	std::string GetVersionInfo(void* open_process); // Gets the version info of the said process
+
 	// Information relating to a player (and cache string counterparts)
 	struct PlayerInformation
 	{

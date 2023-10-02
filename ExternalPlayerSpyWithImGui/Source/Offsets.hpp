@@ -1,25 +1,28 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 // Constant offsets
 namespace Offset
 {
-	const size_t SingletonListStart = 308;
-	const size_t SingletonListEnd = SingletonListStart + 4;
-	const size_t JobName = 16;
-	const size_t ScriptContextFromJob = 304;
+	extern std::string CachedFileVersion;
 
-	const size_t ClassName = 20;
-	const size_t Children = 48;
-	const size_t Name = 44;
-	const size_t Parent = 56;
+	const size_t SingletonListStart = 376;
+	const size_t SingletonListEnd = SingletonListStart + sizeof(void*);
+	const size_t JobName = 152;
+	const size_t ScriptContextFromJob = 504;
 
-	const size_t PropertyList = 12;
-	const size_t PropertyStart = 536;
-	const size_t PropertyEnd = 540;
-	const size_t PropertyName = 4;
-	const size_t PropertyVFTable = 48;
+	// const size_t ClassName = 40; // no longer used because bad
+	const size_t Children = 80;
+	const size_t Name = 72;
+	const size_t Parent = 96;
+
+	const size_t PropertyList = 24;
+	const size_t PropertyStart = 936;
+	const size_t PropertyEnd = 944;
+	const size_t PropertyName = 8;
+	const size_t PropertyVFTable = 96; // Not all properties are here, but the ones wanted are
 	const size_t PropertyVFTableGet = 8;
 
 	namespace DataModel

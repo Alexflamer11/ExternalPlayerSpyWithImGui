@@ -49,7 +49,7 @@ namespace MemoryReader
 	{
 		std::string result;
 
-		size_t buffer_size = Read<size_t>(process, address + 20);
+		size_t buffer_size = Read<size_t>(process, address + 24);
 		if (buffer_size >= 16)
 		{
 			size_t len = Read<size_t>(process, address + 16); // Length of actual characters (null terminated)
@@ -64,7 +64,7 @@ namespace MemoryReader
 			Read(process, address, &result[0], len);
 		}
 		else
-			Read(process, address, &result[0], 24); // Overwrite entire std::string
+			Read(process, address, &result[0], sizeof(std::string)); // Overwrite entire std::string
 
 		return result;
 	}
@@ -78,71 +78,29 @@ namespace MemoryReader
 		return ReadString(process, raw_string);
 	}
 
-	inline std::string ClassName(HANDLE process, uintptr_t instance)
+	inline std::string ClassName(HANDLE process, uintptr_t instance, uintptr_t base_address)
 	{
-		// This function will not error asides from actual read errors unless a major exception occurs, this is on purpose
-		uintptr_t instance_vftable;
-		if (!Read<uintptr_t>(process, instance, &instance_vftable) || !instance_vftable)
+		// So just read the typeinfo instead as thats reliable and the classname offset is not
+		uintptr_t vftable = MemoryReader::Read<uintptr_t>(process, instance);
+		if (!vftable)
 			return "";
 
-		uintptr_t instance_class_name_function;
-		if (!Read<uintptr_t>(process, instance_vftable + Offset::ClassName, &instance_class_name_function) || !instance_class_name_function)
+		uintptr_t vftable_info = MemoryReader::Read<uintptr_t>(process, vftable - sizeof(void*));
+		if (!vftable_info)
 			return "";
 
-		uint8_t move_instruction;
-		if (!Read<uint8_t>(process, instance_class_name_function, &move_instruction) || move_instruction != 0xA1) // mov eax, XXXXXXXX
+		uintptr_t type_info = base_address + MemoryReader::Read<uint32_t>(process, vftable_info + 12);
+
+		char buff[0x100];
+		if (!MemoryReader::Read(process, type_info + sizeof(void*) * 2, buff, sizeof(buff)))
 			return "";
 
-		uintptr_t class_name_raw;
-		if (!Read<uintptr_t>(process, instance_class_name_function + 1, &class_name_raw) || !class_name_raw)
+		if (memcmp(buff, ".?AV", 4) != 0)
 			return "";
 
-		std::string class_name = ReadStringPtr(process, class_name_raw);
-		if (class_name.empty())
-		{
-			// Idiotic path, name not initialized, I refuse to create a thread
-			uint8_t call_instruction;
-			if (!Read<uint8_t>(process, instance_class_name_function + 9, &call_instruction) || call_instruction != 0xE8) // call sub_XXXXXXXX
-				return "";
+		char* first_at = strchr(buff, '@');
 
-			intptr_t setter_call;
-			if (!Read<intptr_t>(process, instance_class_name_function + 10, &setter_call) || !setter_call) // call destination
-				return "";
-
-			// Get the actual destination of the call
-			uintptr_t class_name_initializer = instance_class_name_function + 14 + setter_call; // call + destination + 5
-
-			// Check the entry to make sure it is a function
-			uint8_t entry_instruction;
-			if (!Read<uint8_t>(process, class_name_initializer, &entry_instruction) || entry_instruction != 0x53) // push ebx
-				return "";
-
-			// Create an instruction buffer to scan for push STRING
-			uint8_t buffer[256];
-			if (!Read<uint8_t>(process, class_name_initializer, buffer, sizeof(buffer)))
-				return "";
-
-			for (uint8_t* i = buffer; i < buffer + sizeof(buffer); i++)
-			{
-				// Found push string
-				if (i[0] == 0x6A && i[2] == 0x6A && i[4] == 0x6A && i[6] == 0x68)
-				{
-					uintptr_t string_address = *reinterpret_cast<uintptr_t*>(i + 7);
-
-					char raw_class_name[128];
-
-					// This will read over the buffer, but since there are always bytes after this, it is not an issue
-					if (!Read<char>(process, string_address, raw_class_name, sizeof(raw_class_name)))
-						return "";
-
-					raw_class_name[127] = '\0'; // 100% make sure it is null terminated
-
-					class_name = raw_class_name;
-				}
-			}
-		}
-
-		return class_name;
+		return std::string(buff + 4, first_at ? first_at - buff - 4 : strlen(buff));
 	}
 	
 	// ScanRegion and ScanProcess from axstin fps unlocker for lazy auto update task scheduler

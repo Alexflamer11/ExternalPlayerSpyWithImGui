@@ -425,6 +425,9 @@
     <ClInclude Include="Libraries\stb_image.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Libraries\glut\include\GL\glut.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="Libraries\cpr\cpr\CMakeLists.txt" />

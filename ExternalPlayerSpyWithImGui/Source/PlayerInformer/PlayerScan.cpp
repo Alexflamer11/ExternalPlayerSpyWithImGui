@@ -11,6 +11,7 @@
 #include <cpr/cpr.h>
 #include "nlohmann/json.hpp"
 
+uintptr_t cached_base_address = 0;
 uintptr_t cached_task_scheduler = 0;
 
 // Cache player images, and yes copy the vector of players, will be initialized with std::thread
@@ -114,19 +115,19 @@ public:
 
 	bool IsValidProperty()
 	{
-		return MemoryReader::Read<uintptr_t>(Process, Ptr + 4);
+		return MemoryReader::Read<uintptr_t>(Process, Ptr + 8);
 	}
 
 	// prop->type
 	int Type()
 	{
-		return MemoryReader::Read<int>(Process, Ptr + 8);
+		return MemoryReader::Read<int>(Process, Ptr + 16);
 	}
 
 	// prop->member->name;
 	std::string Name()
 	{
-		uintptr_t member = MemoryReader::Read<uintptr_t>(Process, Ptr + 4);
+		uintptr_t member = MemoryReader::Read<uintptr_t>(Process, Ptr + 8);
 		if (!member || Type() != 0)
 			return "";
 
@@ -136,7 +137,7 @@ public:
 	// prop->member->get();
 	uintptr_t PropertyGetter()
 	{
-		uintptr_t member = MemoryReader::Read<uintptr_t>(Process, Ptr + 4);
+		uintptr_t member = MemoryReader::Read<uintptr_t>(Process, Ptr + 8);
 		if (!member || Type() != 0)
 			return 0;
 
@@ -157,7 +158,7 @@ struct PropertyList
 		Iterator(HANDLE process, uintptr_t ptr) : Process(process), Ptr(ptr) {};
 
 		PropertyPtr operator*() { return PropertyPtr(Process, Ptr); }
-		Iterator& operator++() { Ptr += 12; return *this; } // size of class
+		Iterator& operator++() { Ptr += 24; return *this; } // size of class
 		friend bool operator== (const Iterator& a, const Iterator& b) { return a.Ptr == b.Ptr; };
 		friend bool operator!= (const Iterator& a, const Iterator& b) { return a.Ptr != b.Ptr; };
 
@@ -195,7 +196,7 @@ struct ChildList
 			MemoryReader::Read(Process, Ptr, &child); // do not throw an error
 			return child;
 		}
-		Iterator& operator++() { Ptr += 8; return *this; } // size of std::shared_ptr
+		Iterator& operator++() { Ptr += sizeof(std::shared_ptr<void*>); return *this; } // size of std::shared_ptr
 		friend bool operator== (const Iterator& a, const Iterator& b) { return a.Ptr == b.Ptr; };
 		friend bool operator!= (const Iterator& a, const Iterator& b) { return a.Ptr != b.Ptr; };
 
@@ -206,7 +207,7 @@ struct ChildList
 	};
 
 	Iterator begin() { return Iterator(Process, MemoryReader::Read<uintptr_t>(Process, ChildrenList)); }
-	Iterator end() { return Iterator(Process, MemoryReader::Read<uintptr_t>(Process, ChildrenList + 4)); } // std::vector
+	Iterator end() { return Iterator(Process, MemoryReader::Read<uintptr_t>(Process, ChildrenList + sizeof(void*))); } // std::vector
 
 	ChildList(HANDLE process, uintptr_t instance) : Process(process), ChildrenList(0)
 	{
@@ -224,10 +225,15 @@ bool ComparePlayerSort(std::shared_ptr<PlayerInformer::PlayerInformation>& i1, s
 	return i1->LowerName.compare(i2->LowerName) < 1;
 }
 
-bool SuccessSinceUpdate = false; // As force update will not always be present, so make sure joins work properly
+bool SuccessSinceUpdate = true; // As force update will not always be present, so make sure joins work properly
+bool DisplayedVersionWarning = false; // If a new process is found, and the cached version is not the same, warn the user
+
 uintptr_t CachedDataModel = 0; // Cache DataModel so we can properly handle joins when the player teleports
-void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
+void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update, bool new_process)
 {
+	if (new_process)
+		DisplayedVersionWarning = false;
+
 	if (force_update)
 		SuccessSinceUpdate = false;
 
@@ -240,47 +246,62 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 			puts("[*] New process, rescanning for task scheduler.");
 
 		cached_task_scheduler = 0;
+		cached_base_address = 0;
 
 		MODULEINFO mod = MemoryReader::GetProcessInfo(process);
 		uintptr_t start = (uintptr_t)mod.lpBaseOfDll;
 		uintptr_t end = start + mod.SizeOfImage;
 
-		if (auto result = (const uint8_t*)MemoryReader::ScanProcess(process, "\x55\x8B\xEC\x83\xE4\xF8\x83\xEC\x08\xE8\x00\x00\x00\x00\x8D\x0C\x24", "xxxxxxxxxx????xxx", (uint8_t*)start, (uint8_t*)end))
+		cached_base_address = start;
+
+		// E8 ? ? ? ? F2 0F ? B8 00 01 00 00
+		uintptr_t task_scheduler_call = (uintptr_t)MemoryReader::ScanProcess(process, "\xE8\x00\x00\x00\x00\xF2\x0F\x00\xB8\x00\x01\x00\x00", "x????xx?xxxxx", (uint8_t*)start, (uint8_t*)end);
+		if (task_scheduler_call)
 		{
-			auto gts_fn = result + 14 + MemoryReader::Read<int32_t>(process, (uintptr_t)(result + 10));
+			// Call = E8 XX XX XX XX
+			// Destination = Address + Offset (XX XX XX XX) + sizeof(instr) (5)
+			uintptr_t task_scheduler_start = task_scheduler_call + MemoryReader::Read<uint32_t>(process, task_scheduler_call + 1) + 5;
 
-			//printf("[%p] GetTaskScheduler: %p\n", process, gts_fn);
+			printf("[*] Task scheduler function at: %llX\n", task_scheduler_start);
 
-			uint8_t buffer[0x100];
-			if (MemoryReader::Read(process, (uintptr_t)gts_fn, buffer, sizeof(buffer)))
+			// 48 8B ? ? ? ? ? 48 ? ? ? 5B C3
+			// mov eax, SINGLETON
+			// add rsp, ?
+			// pop ?
+			// ret
+			const char sig[] = "\x48\x8B\x00\x00\x00\x00\x00\x48\x00\x00\x00\x5B\xC3";
+			const char mask[] = "xx?????x???xx";
+			
+			uint8_t buffer[0x150];
+			if (MemoryReader::Read(process, task_scheduler_start, buffer, sizeof(buffer)))
 			{
-				if (auto inst = Utils::Scan("\xA1\x00\x00\x00\x00\x8B\x4D\xF4", "x????xxx", (uintptr_t)buffer, (uintptr_t)buffer + 0x100)) // mov eax, <TaskSchedulerPtr>; mov ecx, [ebp-0Ch])
+				uint8_t* first = Utils::Scan(sig, mask, (uintptr_t)buffer, (uintptr_t)buffer + sizeof(buffer));
+				if (first && first - buffer >= sizeof(sig))
 				{
-					//printf("[%p] Inst: %p\n", process, gts_fn + (inst - buffer));
-					cached_task_scheduler = *(uintptr_t*)(inst + 1);
+					uintptr_t first_addr = first - buffer + task_scheduler_start + *(uint32_t*)(first + 3) + 7;
+					if (MemoryReader::Read<uintptr_t>(process, first_addr))
+						cached_task_scheduler = first_addr;
+				}
+
+				if (!cached_task_scheduler)
+				{
+					puts("[*] First scheduler failed, getting second.");
+
+					size_t offset = first - buffer + 1;
+					uint8_t* second = Utils::Scan(sig, mask, (uintptr_t)buffer + offset, (uintptr_t)buffer + sizeof(buffer) + offset);
+					if (second && second - buffer >= sizeof(sig))
+					{
+						uintptr_t second_addr = second - buffer + task_scheduler_start + *(uint32_t*)(second + 3) + 7;
+						if (MemoryReader::Read<uintptr_t>(process, second_addr))
+							cached_task_scheduler = second_addr;
+					}
 				}
 			}
 		}
-		// 55 8B EC 83 E4 F8 83 EC 14 56 E8 ?? ?? ?? ?? 8D 4C 24 10
-		else if (auto result = (const uint8_t*)MemoryReader::ScanProcess(process, "\x55\x8B\xEC\x83\xE4\xF8\x83\xEC\x14\x56\xE8\x00\x00\x00\x00\x8D\x4C\x24\x10", "xxxxxxxxxxx????xxxx", (uint8_t*)start, (uint8_t*)end))
-		{
-			auto gts_fn = result + 15 + MemoryReader::Read<int32_t>(process, (uintptr_t)(result + 11));
 
-			//printf("[%p] GetTaskScheduler: %p\n", process, gts_fn);
-
-			uint8_t buffer[0x100];
-			if (MemoryReader::Read(process, (uintptr_t)gts_fn, buffer, sizeof(buffer)))
-			{
-				if (auto inst = Utils::Scan("\xA1\x00\x00\x00\x00\x8B\x4D\xF4", "x????xxx", (uintptr_t)buffer, (uintptr_t)buffer + 0x100)) // mov eax, <TaskSchedulerPtr>; mov ecx, [ebp-0Ch])
-				{
-					cached_task_scheduler = *(uintptr_t*)(inst + 1);
-				}
-			}
-		}
+		if (cached_task_scheduler)
+			printf("[*] Found task scheduler: %llX\n", MemoryReader::Read<uintptr_t>(process, cached_task_scheduler));
 	}
-
-	if (!cached_task_scheduler)
-		throw std::exception("failed to get task scheduler");
 
 	uintptr_t data_model = 0;
 
@@ -289,8 +310,11 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 
 	// Set all cached entries to 0
 	// Would happen on game version changes (if offset change)
+	// Or user wants to recache all offsets
 	if (!SuccessSinceUpdate)
 	{
+		Offset::CachedFileVersion = "";
+
 		Offset::DataModel::PlaceId = 0;
 		Offset::DataModel::JobId = 0;
 
@@ -299,6 +323,19 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 		Offset::Player::AccountAge = 0;
 		Offset::Player::FollowUserId = 0;
 		Offset::Player::TeleportedIn = 0;
+	}
+
+	// Display a warning on new versions
+	if (!DisplayedVersionWarning && Offset::CachedFileVersion.size())
+	{
+		std::string current_version = PlayerInformer::GetVersionInfo(process);
+		if (current_version.size())
+		{
+			if (current_version != Offset::CachedFileVersion)
+				printf("[WARNING] File versions are different: %s != %s\n", Offset::CachedFileVersion.c_str(), current_version.c_str());
+
+			DisplayedVersionWarning = true;
+		}
 	}
 
 	uintptr_t singleton;
@@ -311,7 +348,7 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 	uintptr_t list_start = MemoryReader::Read<size_t>(process, singleton + Offset::SingletonListStart);
 	uintptr_t list_end = MemoryReader::Read<size_t>(process, singleton + Offset::SingletonListEnd);
 
-	for (uintptr_t i = list_start; i != list_end; i += 8) // sizeof(shared_ptr<>())
+	for (uintptr_t i = list_start; i != list_end; i += sizeof(std::shared_ptr<void*>)) // sizeof(shared_ptr<>())
 	{
 		uintptr_t ptr = MemoryReader::Read<uintptr_t>(process, i);
 		if (ptr)
@@ -321,7 +358,7 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 			{
 				uintptr_t script_context = MemoryReader::Read<uintptr_t>(process, ptr + Offset::ScriptContextFromJob);
 				data_model = MemoryReader::Read<uintptr_t>(process, script_context + Offset::Parent);
-
+				
 				break;
 			}
 		}
@@ -347,13 +384,20 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 				{
 					uintptr_t getter = ptr.PropertyGetter();
 					std::string prop_name = ptr.Name();
-
+					
 					if (prop_name == "PlaceId")
-						Offset::DataModel::PlaceId = MemoryReader::Read<size_t>(process, getter + 2);
+						Offset::DataModel::PlaceId = MemoryReader::Read<uint32_t>(process, getter + 3);
 					else if (prop_name == "JobId")
-						Offset::DataModel::JobId = MemoryReader::Read<size_t>(process, getter + 6);
+						Offset::DataModel::JobId = MemoryReader::Read<uint32_t>(process, getter + 12);
 				}
 			}
+
+			printf("[*] DataModel Offsets\n"
+				"  PlaceId: %i (0x%llX)\n"
+				"  JobId: %i (0x%llX)\n",
+				Offset::DataModel::PlaceId, Offset::DataModel::PlaceId,
+				Offset::DataModel::JobId, Offset::DataModel::JobId
+			);
 		}
 
 		// Would only fail in the case of a read during teleport
@@ -366,7 +410,7 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 
 		// Get engine information
 		auto engine_info = PlayerInformer::EngineReader();
-
+	
 		// Keep trying to get the server information until all of it is successful
 		if (engine_info.data.JobId == "UNKNOWN" || !SuccessSinceUpdate || CachedDataModel != data_model)
 		{
@@ -375,12 +419,16 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 			engine_info.data.PlaceId = 0;
 			engine_info.data.PlaceIdStr = "UNKNOWN";
 			engine_info.data.JobId = "UNKNOWN";
-
-			size_t place_id_addr = MemoryReader::Read<size_t>(process, data_model - 12 + Offset::DataModel::PlaceId);
-			size_t place_id_encrypted = MemoryReader::Read<size_t>(process, place_id_addr);
-			size_t place_id = place_id_encrypted - place_id_addr;
-
-			std::string job_id = MemoryReader::ReadString(process, data_model - 12 + Offset::DataModel::JobId);
+			
+			uintptr_t place_id_addr = MemoryReader::Read<size_t>(process, data_model - 320 + Offset::DataModel::PlaceId);
+			
+			uint32_t addr32 = place_id_addr;
+			uint32_t place_id_encrypted_lower = MemoryReader::Read<uint32_t>(process, place_id_addr);
+			uint32_t place_id_encrypted_upper = MemoryReader::Read<uint32_t>(process, place_id_addr + 4);
+			
+			size_t place_id = (uintptr_t)(place_id_encrypted_lower - addr32) | ((uintptr_t)(place_id_encrypted_upper - addr32) << 32);
+			
+			std::string job_id = MemoryReader::ReadString(process, data_model - 320 + Offset::DataModel::JobId);
 
 			engine_info.data.PlaceId = place_id;
 			engine_info.data.PlaceIdStr = std::to_string(place_id);
@@ -389,10 +437,9 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 			if (!job_id.empty())
 				engine_info.data.JobId = job_id;
 
-			//printf("game info: %s - %s\n", engine_info.data.PlaceIdStr.c_str(), job_id.c_str());
+			printf("[*] Game Info: %s - %s\n", engine_info.data.PlaceIdStr.c_str(), job_id.c_str());
 		}
 
-		bool got_player_properties = false; // Re cache player properties
 		int player_frame_count = 0; // Id for rendering player frames
 
 		std::vector<std::shared_ptr<PlayerInformer::PlayerInformation>> player_images_to_cache = {};
@@ -400,7 +447,7 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 		ChildList data_model_children(process, data_model);
 		for (uintptr_t data_model_child : data_model_children)
 		{
-			if (data_model_child && MemoryReader::ClassName(process, data_model_child) == "Players")
+			if (data_model_child && MemoryReader::ClassName(process, data_model_child, cached_base_address) == "Players")
 			{
 				auto player_reader = PlayerInformer::PlayerDataReader();
 				player_reader.data.clear();
@@ -430,40 +477,44 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 				ChildList players(process, data_model_child);
 				for (uintptr_t plr : players)
 				{
-					if (plr && MemoryReader::ClassName(process, plr) == "Player")
+					if (plr && MemoryReader::ClassName(process, plr, cached_base_address) == "Player")
 					{
-						// If player properties need to be cached (in the case of a new process),
-						//   only get get the properties on the first place instance.
-						if (!got_player_properties)
+						if (!Offset::Player::DisplayName || !Offset::Player::UserId
+							|| !Offset::Player::AccountAge || !Offset::Player::FollowUserId)
 						{
-							if (!Offset::Player::DisplayName || !Offset::Player::UserId
-								|| !Offset::Player::AccountAge || !Offset::Player::FollowUserId)
+							PropertyList prop_list(process, plr);
+							for (PropertyPtr ptr : prop_list)
 							{
-								PropertyList prop_list(process, plr);
-								for (PropertyPtr ptr : prop_list)
+								if (ptr.IsValidProperty() && ptr.Type() == 0)
 								{
-									if (ptr.IsValidProperty() && ptr.Type() == 0)
-									{
-										uintptr_t getter = ptr.PropertyGetter();
-										std::string prop_name = ptr.Name();
+									uintptr_t getter = ptr.PropertyGetter();
+									std::string prop_name = ptr.Name();
 										
-										if (prop_name == "DisplayName")
-											Offset::Player::DisplayName = MemoryReader::Read<uintptr_t>(process, getter + 6);
-										else if (prop_name == "UserId")
-											Offset::Player::UserId = MemoryReader::Read<uintptr_t>(process, getter + 25);
-										else if (prop_name == "AccountAge")
-											Offset::Player::AccountAge = MemoryReader::Read<uintptr_t>(process, getter + 2);
-										else if (prop_name == "FollowUserId")
-											Offset::Player::FollowUserId = MemoryReader::Read<uintptr_t>(process, getter + 2);
-										else if (prop_name == "TeleportedIn")
-											Offset::Player::TeleportedIn = MemoryReader::Read<uintptr_t>(process, getter + 2);
-
-										got_player_properties = true;
-									}
+									if (prop_name == "DisplayName")
+										Offset::Player::DisplayName = MemoryReader::Read<uint32_t>(process, getter + 12);
+									else if (prop_name == "UserId")
+										Offset::Player::UserId = MemoryReader::Read<uint32_t>(process, getter + 29);
+									else if (prop_name == "AccountAge")
+										Offset::Player::AccountAge = MemoryReader::Read<uint32_t>(process, getter + 2);
+									else if (prop_name == "FollowUserId")
+										Offset::Player::FollowUserId = MemoryReader::Read<uint32_t>(process, getter + 3);
+									else if (prop_name == "TeleportedIn")
+										Offset::Player::TeleportedIn = MemoryReader::Read<uint32_t>(process, getter + 3);
 								}
 							}
-							else
-								got_player_properties = true;
+
+							printf("[*] Offsets\n"
+								"  DisplayName: %i (0x%llX)\n"
+								"  UserId: %i (0x%llX)\n"
+								"  AccountAge: %i (0x%llX)\n"
+								"  FollowUserId: %i (0x%llX)\n"
+								"  TeleportedIn: %i (0x%llX)\n",
+								Offset::Player::DisplayName, Offset::Player::DisplayName,
+								Offset::Player::UserId, Offset::Player::UserId,
+								Offset::Player::AccountAge, Offset::Player::AccountAge,
+								Offset::Player::FollowUserId, Offset::Player::FollowUserId,
+								Offset::Player::TeleportedIn, Offset::Player::TeleportedIn
+							);
 						}
 
 						// Properties will only fail to get in the case of a teleport
@@ -552,7 +603,7 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 								player->UniquePopoutName += std::to_string(player_frame_count++);
 
 								// AccountAge
-								player->AccountAge = MemoryReader::Read<size_t>(process, plr + Offset::Player::AccountAge);
+								player->AccountAge = MemoryReader::Read<uint32_t>(process, plr + Offset::Player::AccountAge);
 								player->AccountAgeStr = std::to_string(player->AccountAge) + (player->AccountAge == 1 ? " day" : " days");
 
 								size_t years = player->AccountAge / 365;
@@ -584,8 +635,16 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update)
 								player->AccountCreatedStr += std::to_string(days) + (days == 1 ? " day ago" : " days ago");
 
 								// TeleportedIn
-								player->TeleportedIn = MemoryReader::Read<bool>(process, plr + Offset::Player::TeleportedIn);
-								player->TeleportedInStr = player->TeleportedIn ? "true" : "false";
+								if (Offset::Player::TeleportedIn)
+								{
+									player->TeleportedIn = MemoryReader::Read<bool>(process, plr + Offset::Player::TeleportedIn);
+									player->TeleportedInStr = player->TeleportedIn ? "true" : "false";
+								}
+								else
+								{
+									player->TeleportedIn = false;
+									player->TeleportedInStr = "UNKNWON";
+								}
 
 								// FollowUserId
 								player->CachedFollowUser = 0; // Set in draw

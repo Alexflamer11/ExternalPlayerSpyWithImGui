@@ -497,10 +497,31 @@ static void glfw_error_callback(int error, const char* description)
 	fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
-int main()
+FILE* stream;
+int Entry()
 {
-	const char* overhead_title = "Chinese Government Player Observation Tool v1.0.1";
+	const char* overhead_title = "CCP Player Observation Tool v2.0.0 (Hyperion Stonks Edition)";
 
+	// Allocate a console
+	if (!GetConsoleWindow())
+	{
+		AllocConsole();
+		freopen_s(&stream, "CONOUT$", "w", stdout);
+		freopen_s(&stream, "CONOUT$", "w", stderr);
+		freopen_s(&stream, "CONIN$", "r", stdin);
+		HWND ConsoleHandle = GetConsoleWindow();
+
+		HANDLE stdHnd = GetStdHandle(STD_OUTPUT_HANDLE);
+		DWORD dwMode;
+		GetConsoleMode(stdHnd, &dwMode);
+		dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+		SetConsoleMode(stdHnd, dwMode);
+
+		//SetConsoleMode(ConsoleHandle, ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+		::SetWindowPos(ConsoleHandle, HWND_TOPMOST, 0, 0, 0, 0, SWP_DRAWFRAME | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+		::ShowWindow(ConsoleHandle, SW_NORMAL);
+	}
+	
 	SetConsoleTitleA(overhead_title);
 	Utils::ShowConsole(); // If console is hidden
 
@@ -511,7 +532,7 @@ int main()
 	glfwSetErrorCallback(glfw_error_callback);
 	if (!glfwInit())
 		return 1;
-
+	
 	// Decide GL+GLSL versions
 #if defined(IMGUI_IMPL_OPENGL_ES2)
 	// GL ES 2.0 + GLSL 100
@@ -550,9 +571,9 @@ int main()
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;	   // Enable Keyboard Controls
-	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;	  // Enable Gamepad Controls
+	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;	   // Enable Gamepad Controls
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;		   // Enable Docking
-	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;		 // Enable Multi-Viewport / Platform Windows
+	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;		   // Enable Multi-Viewport / Platform Windows
 	io.ConfigViewportsNoAutoMerge = true;
 	//io.ConfigViewportsNoTaskBarIcon = true;
 
@@ -952,98 +973,106 @@ int main()
 				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 191, 0, 255));
 				ImGui::Text("Server Information:");
 				ImGui::PopStyleColor();
-
-				auto engine_reader = PlayerInformer::EngineReader();
-				auto player_reader = PlayerInformer::PlayerDataReader();
 				
-				float pos = ImGui::GetCursorPosY();
-				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(225, 58, 114, 255));
-				ImGui::SetCursorPosY(pos + 3);
-				ImGui::Text("Place Id:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
-				ImGui::PopStyleColor();
-				if (ImGui::Button(engine_reader.data.PlaceIdStr.c_str()))
-					Utils::SetClipboard(engine_reader.data.PlaceIdStr);
-
-				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(96, 234, 90, 255));
-				pos = ImGui::GetCursorPosY();
-				ImGui::SetCursorPosY(pos + 3);
-				ImGui::Text("Job Id:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
-				ImGui::PopStyleColor();
-				if (ImGui::Button(engine_reader.data.JobId.c_str()))
-					Utils::SetClipboard(engine_reader.data.JobId);
-
-				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 188, 255));
-				pos = ImGui::GetCursorPosY();
-				ImGui::SetCursorPosY(pos + 3);
-				ImGui::Text("Join Script:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
-				ImGui::PopStyleColor();
-				if (ImGui::Button("Browser"))
 				{
-					std::string browser_link = "Roblox.GameLauncher.joinGameInstance(";
-					browser_link += engine_reader.data.PlaceIdStr;
-					browser_link += ", \"";
-					browser_link += engine_reader.data.JobId;
-					browser_link += "\")";
+					auto engine_reader = PlayerInformer::EngineReader();
+					auto player_reader = PlayerInformer::PlayerDataReader();
 
-					Utils::SetClipboard(browser_link);
-				}
+					float pos = ImGui::GetCursorPosY();
+					ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(225, 58, 114, 255));
+					ImGui::SetCursorPosY(pos + 3);
+					ImGui::Text("Place Id:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+					ImGui::PopStyleColor();
+					if (ImGui::Button(engine_reader.data.PlaceIdStr.c_str()))
+						Utils::SetClipboard(engine_reader.data.PlaceIdStr);
 
-				ImGui::SameLine(); ImGui::SetCursorPosY(pos); ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 4);
-				if (ImGui::Button("Lua"))
-				{
-					std::string lua_link = "game:GetService(\"TeleportService\"):TeleportToPlaceInstance(";
-					lua_link += engine_reader.data.PlaceIdStr;
-					lua_link += ", \"";
-					lua_link += engine_reader.data.JobId;
-					lua_link += "\")";
+					ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(96, 234, 90, 255));
+					pos = ImGui::GetCursorPosY();
+					ImGui::SetCursorPosY(pos + 3);
+					ImGui::Text("Job Id:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+					ImGui::PopStyleColor();
+					if (ImGui::Button(engine_reader.data.JobId.c_str()))
+						Utils::SetClipboard(engine_reader.data.JobId);
 
-					Utils::SetClipboard(lua_link);
-				}
-
-				ImGui::NewLine();
-
-				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 191, 0, 255));
-				ImGui::Text("General Settings:");
-				ImGui::PopStyleColor();
-
-				if (ImGui::Button("Show Console"))
-					Utils::ShowConsole();
-
-				ImGui::SameLine();
-				ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 4);
-
-				if (ImGui::Button("Hide Console"))
-					Utils::HideConsole();
-
-				ImGui::NewLine();
-
-				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 191, 0, 255));
-				ImGui::Text("Extra:");
-				ImGui::PopStyleColor();
-
-				pos = ImGui::GetCursorPosY();
-				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(48, 200, 255, 255));
-				ImGui::SetCursorPosY(pos + 3);
-				ImGui::Text("Dump all Player Information:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
-				ImGui::PopStyleColor();
-				if (ImGui::Button("Copy to Clipboard"))
-				{
-					nlohmann::json info = DumpServerInformation(player_reader.data, engine_reader.data);
-					std::string dumped = info.dump(1, '\t');
-					Utils::SetClipboard(dumped);
-				}
-
-				ImGui::SameLine(); ImGui::SetCursorPosY(pos); ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 4);
-
-				if (ImGui::Button("Dump to File"))
-				{
-					if (!DialogDebounce)
+					ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 188, 255));
+					pos = ImGui::GetCursorPosY();
+					ImGui::SetCursorPosY(pos + 3);
+					ImGui::Text("Join Script:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+					ImGui::PopStyleColor();
+					if (ImGui::Button("Browser"))
 					{
-						DialogDebounce = true;
+						std::string browser_link = "Roblox.GameLauncher.joinGameInstance(";
+						browser_link += engine_reader.data.PlaceIdStr;
+						browser_link += ", \"";
+						browser_link += engine_reader.data.JobId;
+						browser_link += "\")";
 
-						nlohmann::json info = DumpServerInformation(player_reader.data, engine_reader.data);
-						std::thread(WriteJSONToFileDialog, "Save Player Information", info.dump(1, '\t')).detach();
+						Utils::SetClipboard(browser_link);
 					}
+
+					ImGui::SameLine(); ImGui::SetCursorPosY(pos); ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 4);
+					if (ImGui::Button("Lua"))
+					{
+						std::string lua_link = "game:GetService(\"TeleportService\"):TeleportToPlaceInstance(";
+						lua_link += engine_reader.data.PlaceIdStr;
+						lua_link += ", \"";
+						lua_link += engine_reader.data.JobId;
+						lua_link += "\")";
+
+						Utils::SetClipboard(lua_link);
+					}
+
+					ImGui::NewLine();
+
+					ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 191, 0, 255));
+					ImGui::Text("General Settings:");
+					ImGui::PopStyleColor();
+
+					if (ImGui::Button("Show Console"))
+						Utils::ShowConsole();
+
+					ImGui::SameLine();
+					ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 4);
+
+					if (ImGui::Button("Hide Console"))
+						Utils::HideConsole();
+
+					ImGui::NewLine();
+
+					ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 191, 0, 255));
+					ImGui::Text("Extra:");
+					ImGui::PopStyleColor();
+
+					pos = ImGui::GetCursorPosY();
+					ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(48, 200, 255, 255));
+					ImGui::SetCursorPosY(pos + 3);
+					ImGui::Text("Dump all Player Information:"); ImGui::SameLine(); ImGui::SetCursorPosY(pos);
+					ImGui::PopStyleColor();
+					if (ImGui::Button("Copy to Clipboard"))
+					{
+						nlohmann::json info = DumpServerInformation(player_reader.data, engine_reader.data);
+						std::string dumped = info.dump(1, '\t');
+						Utils::SetClipboard(dumped);
+					}
+
+					ImGui::SameLine(); ImGui::SetCursorPosY(pos); ImGui::SetCursorPosX(ImGui::GetCursorPosX() - 4);
+
+					if (ImGui::Button("Dump to File"))
+					{
+						if (!DialogDebounce)
+						{
+							DialogDebounce = true;
+
+							nlohmann::json info = DumpServerInformation(player_reader.data, engine_reader.data);
+							std::thread(WriteJSONToFileDialog, "Save Player Information", info.dump(1, '\t')).detach();
+						}
+					}
+				}
+
+				if (ImGui::Button("Recache Engine Offsets"))
+				{
+					PlayerInformer::WroteEngineOffsets = false;
+					PlayerInformer::RequestRefresh();
 				}
 
 				ImGui::EndChildFrame();
@@ -1238,4 +1267,31 @@ int main()
 	glfwTerminate();
 
 	return 0;
+}
+
+int main()
+{
+	return Entry();
+}
+
+BOOL WINAPI DllMain(
+	HINSTANCE hinstDLL,  // handle to DLL module
+	DWORD fdwReason,     // reason for calling function
+	LPVOID lpvReserved)  // reserved
+{
+	// Perform actions based on the reason for calling.
+	switch (fdwReason)
+	{
+	case DLL_PROCESS_ATTACH:
+	{
+		std::thread(Entry).detach(); // NEEDS to be a new thread or OpenGL fails
+		// Props to Relic from https://community.khronos.org/t/loadlibrary-fails-to-load-opengl32-dll/39771/7
+		// for making me look if I was missing std::thread
+		break;
+	}
+	default:
+		break;
+	}
+
+	return TRUE;
 }
