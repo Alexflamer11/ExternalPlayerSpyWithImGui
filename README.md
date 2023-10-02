@@ -12,7 +12,7 @@ Updated for Nemi because it is a fun and cool project :D
 
 
 Should look like this:<br>
-![directory showcase]([https://github.com/[username]/[reponame]/blob/[branch]/image.jpg](https://github.com/Alexflamer11/ExternalPlayerSpyWithImGui/blob/master/DirectoryShowcase.jpg)?raw=true)
+![directory showcase](https://github.com/Alexflamer11/ExternalPlayerSpyWithImGui/blob/master/DirectoryShowcase.jpg?raw=true)
 
 ### Alternative
 1. Change the project settings to compile `ExternalPlayerSpy` as an exe.
