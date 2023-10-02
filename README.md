@@ -10,6 +10,10 @@ Updated for Nemi because it is a fun and cool project :D
 2. Rename the signed executable as `ToHijack.exe`.
 3. Run the loader and it will work as is.
 
+
+Should look like this:<br>
+![directory showcase]([https://github.com/[username]/[reponame]/blob/[branch]/image.jpg](https://github.com/Alexflamer11/ExternalPlayerSpyWithImGui/blob/master/DirectoryShowcase.jpg)?raw=true)
+
 ### Alternative
 1. Change the project settings to compile `ExternalPlayerSpy` as an exe.
 2. Sign the player spy with a valid cert (this is required or you will get kicked as only signed processes are allowed to have open handles).
@@ -17,7 +21,8 @@ Updated for Nemi because it is a fun and cool project :D
 
 ## Caching the offsets
 1. Go to this game: https://www.roblox.com/games/14933634231/Taxi-Gamers
-2. Load the player spy and offsets will be cached if you see your player in the list<br>
+2. Load the player spy and offsets will be cached if you see your player in the list.
+
 Make sure to recache offsets if an update breaks the player spy, the console displays a warning if a new version is found from what was cached.
 
 ### Alternative
