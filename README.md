@@ -47,7 +47,7 @@ end
 
 Libraries/glut/lib/glut.lib:<br>
 -> Go to https://www.opengl.org/resources/libraries/glut/glut_downloads.php and find `glutdlls37beta.zip`<be>
--> Alternatively just download the files directly at `https://www.opengl.org/resources/libraries/glut/glutdlls37beta.zip`<br>
+-> Alternatively just download the files directly at https://www.opengl.org/resources/libraries/glut/glutdlls37beta.zip<br>
 Yes I am using the 20-year-old outdated OpenGL libraries, their site, and all basic searches lead to it what do you want me to do?<br><br>
 An additional note with the library, if the header file is copied, make sure to comment out line `51` of `Libraries/glut/include/GL/glut.h` (comments out the pragma include for `glut32.lib`)<br>
 -> Should look like like this `//#pragma comment (lib, "glut32.lib")    /* link with Win32 GLUT lib */`
