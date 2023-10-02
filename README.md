@@ -32,7 +32,7 @@ while wait() do
 		game.Players.LocalPlayer.DisplayName,
 		game.Players.LocalPlayer.FollowUserId,
 		-- TeleportedIn is a locked property, maybe one day I will change permissions if it fails to get it
-    pcall(function() return game.Players.LocalPlayer.TeleportedIn end)
+		pcall(function() return game.Players.LocalPlayer.TeleportedIn end)
 	}
 end
 ```
