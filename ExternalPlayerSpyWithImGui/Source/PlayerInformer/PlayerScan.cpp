@@ -489,11 +489,11 @@ void PlayerScan::UpdatePlayerList(HANDLE process, bool force_update, bool new_pr
 								{
 									uintptr_t getter = ptr.PropertyGetter();
 									std::string prop_name = ptr.Name();
-										
+
 									if (prop_name == "DisplayName")
 										Offset::Player::DisplayName = MemoryReader::Read<uint32_t>(process, getter + 12);
 									else if (prop_name == "UserId")
-										Offset::Player::UserId = MemoryReader::Read<uint32_t>(process, getter + 29);
+										Offset::Player::UserId = MemoryReader::Read<uint32_t>(process, getter + 9);
 									else if (prop_name == "AccountAge")
 										Offset::Player::AccountAge = MemoryReader::Read<uint32_t>(process, getter + 2);
 									else if (prop_name == "FollowUserId")
