@@ -122,13 +122,14 @@ bool Load()
 		return 1;
 	}
 
-	wchar_t DllFullPath[] = L"C:\\Users\\Alex\\source\\repos\\ExternalPlayerSpyWithImGui\\x64\\Release\\ExternalPlayerSpyWithImGui.dll";
+	wchar_t full_file_name[MAX_PATH];
+	GetFullPathNameW(L"ExternalPlayerSpyWithImGui.dll", MAX_PATH, full_file_name, nullptr);
 
 	THREAD_DATA data;
 	HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
 	data.fnRtlInitUnicodeString = (pRtlInitUnicodeString)GetProcAddress(hNtdll, "RtlInitUnicodeString");
 	data.fnLdrLoadDll = (pLdrLoadDll)GetProcAddress(hNtdll, "LdrLoadDll");
-	memcpy(data.DllName, DllFullPath, (wcslen(DllFullPath) + 1) * sizeof(WCHAR));
+	memcpy(data.DllName, full_file_name, (wcslen(full_file_name) + 1) * sizeof(WCHAR));
 	data.DllPath = NULL;
 	data.Flags = 0;
 	data.ModuleHandle = INVALID_HANDLE_VALUE;
