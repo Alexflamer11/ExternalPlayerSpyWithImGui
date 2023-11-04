@@ -1,3 +1,6 @@
+THIS DOES NOT WORK ANYMORE PUBLIC VERSIONS WILL NOT BE POSTED
+THIS VERSION DID NOT WORK ON WIN11
+
 # ExternalPlayerSpyWithImGui
 Cool external player tool I made now with a gui
 
